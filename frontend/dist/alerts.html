@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Alerts Log</title>
+<style>body{font-family:system-ui,Segoe UI,Arial;margin:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:6px;font-size:14px} th{background:#f7f7f7;text-align:left}</style>
+</head><body>
+<h1>Alerts Log</h1>
+<p><button id="refresh">Refresh</button> <a href="/api/export/alerts.csv" target="_blank">Download CSV</a> | <a href="/">Back to Main</a></p>
+<table id="t"><thead><tr>
+<th>Time</th><th>League</th><th>Market</th><th>Entity</th><th>Side</th><th>Book</th><th>Price</th><th>EV%</th><th>Beat-Fair %</th><th>Link</th>
+</tr></thead><tbody></tbody></table>
+<script>
+async function load(){
+  const j = await fetch('/api/alerts/logs?limit=500').then(r=>r.json());
+  const tb = document.querySelector('#t tbody'); tb.innerHTML='';
+  (j.items||[]).forEach(r=>{
+    const tr=document.createElement('tr');
+    const link = r.deeplink ? `<a href="${r.deeplink}" target="_blank">open</a>` : '';
+    tr.innerHTML = `<td>${r.created_at||''}</td><td>${r.leagueID||''}</td><td>${r.marketName||''}</td>
+      <td>${r.entityName||''}</td><td>${r.side||''}</td><td>${r.book||''}</td>
+      <td>${r.american??''}</td><td>${(r.ev_pct??'').toString()}</td><td>${(r.consensus_edge_pct??'').toString()}</td><td>${link}</td>`;
+    tb.appendChild(tr);
+  });
+}
+document.getElementById('refresh').addEventListener('click',load);
+load();
+</script>
+</body></html>

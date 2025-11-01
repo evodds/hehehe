@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EVOdds – Phase 6</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: ui-sans-serif, system-ui, Arial, sans-serif; margin: 24px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    input, select, button, a.btn { padding:8px 10px; font-size:14px; }
+    table { border-collapse: collapse; width:100%; margin-top:12px; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: top; }
+    .chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#f3f4f6; font-size:12px; }
+    .evpos { color:#065f46; font-weight:600; } .evneg { color:#7f1d1d; font-weight:600; }
+    .muted { color:#6b7280; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    a.btn { display:inline-block; text-decoration:none; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div id="err" style="display:none;background:#fee2e2;color:#7f1d1d;padding:8px;border:1px solid #fecaca;border-radius:6px;margin-bottom:12px"></div>
+  <h1>EVOdds <span class="muted">– EV / No-Vig / Kelly + Snapshots, Alerts, Scheduler, CSV, Cache & Presets</span></h1>
+
+  <div class="row">
+    <label>Admin token <input id="admin_token" placeholder="(optional)"></label>
+    <span class="muted" id="cache_info"></span>
+  </div>
+
+  <div class="row">
+    <label>Preset
+      <select id="preset_select"></select>
+    </label>
+    <button id="apply_preset">Apply Preset</button>
+
+    <label>LeagueID <input id="leagueID" placeholder="NBA, NFL, EPL..."></label>
+    <label>SportID <input id="sportID" placeholder="BASKETBALL, FOOTBALL..."></label>
+    <label>Markets <input id="markets" placeholder="oddID1,oddID2 (optional)"></label>
+    <label>Min EV% <input id="min_edge" type="number" step="0.1" value="1.0"></label>
+    <label><input id="players_only" type="checkbox" checked> Players only</label>
+    <label><input id="novig" type="checkbox" checked> No-Vig</label>
+    <label>Risk (Kelly) <input id="risk" type="number" step="0.1" min="0" max="1" value="1"></label>
+    <label>Book IN <input id="book_in" placeholder="draftkings,fanduel"></label>
+    <label>Book OUT <input id="book_out" placeholder="hardrockbet"></label>
+    <label>JX IN <input id="jx_in" placeholder="nj,pa (optional)"></label>
+    <label>JX OUT <input id="jx_out" placeholder="ny (optional)"></label>
+    <label>Per page <input id="per_page" type="number" value="100" min="1" max="1000" style="width:70px"></label>
+    <label>Page <input id="page" type="number" value="1" min="1" style="width:60px"></label>
+    <button id="run">Fetch</button>
+    <a class="btn" href="/leaderboard.html" target="_blank">Open Leaderboard</a>
+  </div>
+
+  <div class="row">
+    <button id="snap">Save snapshot</button>
+    <label>Show last <input id="recent_n" type="number" min="1" max="2000" value="50" style="width:70px"> saved</label>
+    <button id="show_recent">View recent</button>
+    <label>Alert min EV% <input id="alert_min" type="number" step="0.1" value="5.0" style="width:80px"></label>
+    <label>Limit <input id="alert_n" type="number" min="1" max="50" value="10" style="width:70px"></label>
+    <button id="send_alerts">Send Discord</button>
+  </div>
+
+  <div class="row">
+    <label><input id="sched_enabled" type="checkbox"> Auto snapshot</label>
+    <label>Every <input id="sched_min" type="number" min="1" max="240" value="5" style="width:60px"> min</label>
+    <label>Auto-alert EV% <input id="sched_alert" type="number" step="0.1" value="0" style="width:70px"></label>
+    <label>Auto-alert limit <input id="sched_limit" type="number" min="1" max="50" value="10" style="width:70px"></label>
+    <label>Beat-fair % <input id="sched_consedge" type="number" step="0.1" value="0" style="width:80px" title="Min % better than fair price"></label>
+    <label>Beat-median % <input id="sched_mededge" type="number" step="0.1" value="0" style="width:90px" title="Min % better than market median"></label>
+    <label>Dedupe min <input id="sched_dedupe" type="number" min="1" max="240" value="15" style="width:80px"></label>
+    <button id="sched_apply">Apply</button>
+    <button id="sched_status">Status</button>
+    <button id="csv_live">Export CSV (live)</button>
+    <button id="csv_recent">Export CSV (recent)</button>
+    <button id="btn_moved">What moved?</button>
+    <a href="/alerts.html" target="_blank">Alerts Log</a>
+    <a href="/roi.html" target="_blank">ROI</a>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>Event</th><th>Market</th><th>Entity</th><th>Side</th><th>Line</th>
+        <th>Best Book</th><th>Price</th><th>EV%</th><th>Kelly</th><th>Deep Link</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 class="muted">Recent saved</h2>
+  <table id="recent">
+    <thead>
+      <tr><th>When</th><th>League</th><th>Market</th><th>Entity</th><th>Best Book</th><th>Price</th><th>EV%</th><th>Kelly</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 class="muted">Recent movers</h2>
+  <table id="moved">
+    <thead>
+      <tr>
+        <th>When</th><th>League</th><th>Market</th><th>Entity</th><th>Side</th>
+        <th>Book</th><th>Price Δ</th><th>EV% Δ</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const adminToken = () => document.getElementById('admin_token').value.trim();
+
+    function buildQuery(limitVal) {
+      const q = new URLSearchParams();
+      const leagueID = document.getElementById('leagueID').value.trim();
+      const sportID = document.getElementById('sportID').value.trim();
+      const markets = document.getElementById('markets').value.trim();
+      const min_edge = document.getElementById('min_edge').value || '0';
+      const players_only = document.getElementById('players_only').checked;
+      const novig = document.getElementById('novig').checked;
+      const risk = document.getElementById('risk').value || '1';
+      const book_in = document.getElementById('book_in').value.trim();
+      const book_out = document.getElementById('book_out').value.trim();
+      const jx_in = document.getElementById('jx_in').value.trim();
+      const jx_out = document.getElementById('jx_out').value.trim();
+      const per_page = document.getElementById('per_page').value.trim();
+      const page = document.getElementById('page').value.trim();
+
+      if (leagueID) q.set('leagueID', leagueID);
+      if (sportID) q.set('sportID', sportID);
+      if (markets) q.set('markets', markets);
+      q.set('min_edge', String(min_edge));
+      q.set('players_only', players_only ? 'true' : 'false');
+      q.set('novig', novig ? 'true' : 'false');
+      q.set('risk_aversion', String(risk));
+      if (book_in) q.set('book_in', book_in);
+      if (book_out) q.set('book_out', book_out);
+      if (jx_in) q.set('jx_in', jx_in);
+      if (jx_out) q.set('jx_out', jx_out);
+      if (per_page) q.set('per_page', per_page);
+      if (page) q.set('page', page);
+      q.set('limit', String(limitVal ?? 100));
+      return q;
+    }
+
+    async function init() {
+      const t = await fetch('/api/test').then(r=>r.json());
+      document.getElementById('cache_info').textContent =
+        `cache TTL: ${t.cache_ttl_seconds}s  | auth required: ${t.auth_required ? 'yes' : 'no'}`;
+
+      const p = await fetch('/api/presets').then(r=>r.json());
+      const sel = document.getElementById('preset_select');
+      sel.innerHTML = '';
+      (p.names || []).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        if (p.current === name) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function applyPreset() {
+      const name = document.getElementById('preset_select').value;
+      const tok = adminToken();
+      const url = '/api/presets/use?name=' + encodeURIComponent(name) + (tok ? '&token=' + encodeURIComponent(tok) : '');
+      const res = await fetch(url, { method: 'POST' });
+      if (res.status === 401) { alert('Unauthorized: set Admin token'); return; }
+      const j = await res.json();
+      alert('Preset applied: ' + j.selected);
+    }
+
+    async function fetchData() {
+      let data={items:[]};
+      try{
+        const res = await fetch('/api/odds/normalized?' + buildQuery(100).toString());
+        data = await res.json();
+        document.getElementById('err').style.display='none';
+      }catch(e){
+        const b = document.getElementById('err'); b.textContent = 'Network error while fetching odds.';
+        b.style.display='block'; return;
+      }
+      
+      const pager = document.getElementById('pager') || (() => {
+        const el = document.createElement('div'); 
+        el.id = 'pager'; 
+        el.className='muted';
+        el.style.marginBottom = '8px';
+        document.body.insertBefore(el, document.getElementById('tbl'));
+        return el;
+      })();
+      pager.textContent = `Results: ${data.count || 0} | page ${data.page || 1}/${data.pages || 1} (per ${data.per_page || 100})`;
+      
+      const tbody = document.querySelector('#tbl tbody');
+      tbody.innerHTML = '';
+      (data.items || []).forEach(row => {
+        const best = row.best_book || {};
+        const ev = typeof best.ev_pct === 'number' ? best.ev_pct.toFixed(2) : '—';
+        const kelly = typeof best.kelly_fraction === 'number' ? (best.kelly_fraction * 100).toFixed(1) + '%' : '—';
+        const cls = (best.ev_pct || 0) >= 0 ? 'evpos' : 'evneg';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="chip">${row.leagueID || ''}</span><div class="muted mono">${row.eventID || ''}</div></td>
+          <td>${row.marketName || ''}</td>
+          <td>${row.entityName || ''} <div class="muted">${row.entityType || ''}</div></td>
+          <td>${row.side || ''}</td>
+          <td>${row.line ?? ''}</td>
+          <td>${best.bookmakerID || ''}</td>
+          <td>${best.american ?? ''}</td>
+          <td class="${cls}">${ev}</td>
+          <td>${kelly}</td>
+          <td>${best.deeplink ? `<a href="${best.deeplink}" target="_blank">Open</a>` : '—'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function saveSnapshot() {
+      const tok = adminToken();
+      const url = '/api/snapshot/run?' + buildQuery(250).toString() + (tok ? '&token=' + encodeURIComponent(tok) : '');
+      const res = await fetch(url, { method: 'POST' });
+      if (res.status === 401) { alert('Unauthorized: set Admin token'); return; }
+      const j = await res.json();
+      alert(`Scanned ${j.scanned} / saved ${j.saved_new} new`);
+      await showRecent();
+    }
+
+    async function showRecent() {
+      const n = document.getElementById('recent_n').value || '50';
+      const res = await fetch('/api/snapshot/recent?limit=' + n);
+      const j = await res.json();
+      const tbody = document.querySelector('#recent tbody');
+      tbody.innerHTML = '';
+      (j.items || []).forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.created_at}</td>
+          <td>${r.leagueID || ''}</td>
+          <td>${r.marketName || ''}</td>
+          <td>${r.entityName || ''}</td>
+          <td>${r.best_book || ''}</td>
+          <td>${r.best_american ?? ''}</td>
+          <td>${typeof r.ev_pct==='number' ? r.ev_pct.toFixed(2) + '%' : ''}</td>
+          <td>${typeof r.kelly_fraction==='number' ? (r.kelly_fraction*100).toFixed(1) + '%' : ''}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function sendAlerts() {
+      const min = document.getElementById('alert_min').value || '5.0';
+      const n = document.getElementById('alert_n').value || '10';
+      const tok = adminToken();
+      const res = await fetch(`/api/alerts/discord?min_edge=${min}&limit=${n}${tok ? '&token='+encodeURIComponent(tok) : ''}`, { method: 'POST' });
+      if (res.status === 401) { alert('Unauthorized: set Admin token'); return; }
+      const j = await res.json();
+      alert(`Discord sent: ${j.sent ?? 0}`);
+    }
+
+    async function applySched() {
+      const enabled = document.getElementById('sched_enabled').checked;
+      const minutes = document.getElementById('sched_min').value || '5';
+      const alert = document.getElementById('sched_alert').value || '0';
+      const lim = document.getElementById('sched_limit').value || '10';
+      const consEdge = document.getElementById('sched_consedge').value || '0';
+      const medEdge = document.getElementById('sched_mededge').value || '0';
+      const dedupe = document.getElementById('sched_dedupe').value || '15';
+      const q = buildQuery(200);
+      q.set('enabled', String(enabled));
+      q.set('minutes', String(minutes));
+      q.set('alert_min_edge', String(alert));
+      q.set('alert_limit', String(lim));
+      q.set('min_consensus_edge_pct', String(consEdge));
+      q.set('min_median_edge_pct', String(medEdge));
+      q.set('alert_dedupe_minutes', String(dedupe));
+      const tok = adminToken();
+      const res = await fetch('/api/scheduler/set?' + q.toString() + (tok ? '&token='+encodeURIComponent(tok) : ''), { method: 'POST' });
+      if (res.status === 401) { alert('Unauthorized: set Admin token'); return; }
+      const j = await res.json();
+      alert('Scheduler updated: ' + JSON.stringify(j));
+    }
+
+    async function statusSched() {
+      const res = await fetch('/api/scheduler/status');
+      const j = await res.json();
+      alert('Scheduler status: ' + JSON.stringify(j));
+    }
+
+    function exportLiveCSV() {
+      const q = buildQuery(500);
+      window.location.href = '/api/export/live.csv?' + q.toString();
+    }
+
+    function exportRecentCSV() {
+      const n = document.getElementById('recent_n').value || '200';
+      window.location.href = '/api/export/recent.csv?limit=' + n;
+    }
+
+    function exportFairCSV() {
+      const q = buildQuery(500);
+      window.location.href = '/api/export/fair.csv?' + q.toString();
+    }
+
+    document.getElementById('apply_preset').addEventListener('click', applyPreset);
+    document.getElementById('run').addEventListener('click', fetchData);
+    document.getElementById('snap').addEventListener('click', saveSnapshot);
+    document.getElementById('show_recent').addEventListener('click', showRecent);
+    document.getElementById('send_alerts').addEventListener('click', sendAlerts);
+    document.getElementById('sched_apply').addEventListener('click', applySched);
+    document.getElementById('sched_status').addEventListener('click', statusSched);
+    document.getElementById('csv_live').addEventListener('click', exportLiveCSV);
+    document.getElementById('csv_recent').addEventListener('click', exportRecentCSV);
+    document.getElementById('btn_moved').addEventListener('click', async () => {
+      const j = await fetch('/api/moved?min_ev_change=5&min_price_change=25&limit=50').then(r=>r.json());
+      const tb = document.querySelector('#moved tbody'); tb.innerHTML = '';
+      (j.items || []).forEach(r => {
+        const tr = document.createElement('tr');
+        const pdelta = (r.delta_price>0?'+':'') + r.delta_price;
+        const edelta = (r.delta_ev>0?'+':'') + r.delta_ev.toFixed(2) + '%';
+        tr.innerHTML = `
+          <td>${r.when_to || ''}</td>
+          <td>${r.leagueID || ''}</td>
+          <td>${r.marketName || ''}</td>
+          <td>${r.entityName || ''}</td>
+          <td>${r.side || ''}</td>
+          <td>${r.book || ''}</td>
+          <td>${pdelta}</td>
+          <td>${edelta}</td>
+        `;
+        tb.appendChild(tr);
+      });
+    });
+
+    (function maybeAddFairBtn(){
+      const row = document.querySelectorAll('.row')[3];
+      const btn = document.createElement('button');
+      btn.id='csv_fair';
+      btn.textContent='Export CSV (fair)';
+      btn.addEventListener('click', exportFairCSV);
+      row.appendChild(btn);
+    })();
+
+    init();
+    fetchData();
+  </script>
+
+  <hr>
+  <div id="health" class="muted"></div>
+  <script>
+    (async function checkHealth(){
+      try {
+        const h = await fetch('/api/health').then(r=>r.json());
+        document.getElementById('health').textContent = `Health: app ok, SGO ${h.sgo}`;
+      } catch(e) {
+        document.getElementById('health').textContent = 'Health: degraded';
+      }
+    })();
+  </script>
+</body>
+</html>
