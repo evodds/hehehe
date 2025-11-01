@@ -1,0 +1,62 @@
+<!doctype html><html><head><meta charset="utf-8"><title>ROI Tracker</title>
+<style>body{font-family:system-ui,Segoe UI,Arial;margin:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #ddd;padding:6px;font-size:14px} th{background:#f7f7f7;text-align:left} input{margin:2px}</style>
+</head><body>
+<h1>ROI Tracker</h1>
+<p><a href="/">Back to Main</a></p>
+<section>
+  <h3>Add acted bet</h3>
+  <div>
+    <input id="leagueID" placeholder="leagueID (NBA)" />
+    <input id="marketName" placeholder="marketName (Points)" />
+    <input id="entityName" placeholder="entityName" />
+    <input id="side" placeholder="side (Over/Under)" />
+    <input id="book" placeholder="book (draftkings)" />
+    <input id="american" placeholder="american (-110)" />
+    <input id="stake" placeholder="stake (50)" />
+    <input id="kelly" placeholder="kelly_fraction (0.5)" />
+    <input id="ev" placeholder="ev_pct (optional)" />
+    <input id="consedge" placeholder="consensus_edge_pct (optional)" />
+    <input id="token" placeholder="ADMIN token" />
+    <button id="acted">Save</button>
+  </div>
+</section>
+<section>
+  <h3>Settle bet</h3>
+  <div>
+    <input id="betid" placeholder="id" />
+    <input id="result" placeholder="win/lose/push" />
+    <input id="trueodds" placeholder="true_american (optional)" />
+    <input id="token2" placeholder="ADMIN token" />
+    <button id="settle">Settle</button>
+  </div>
+</section>
+<section>
+  <h3>Summary</h3>
+  <div><button id="sum">Refresh</button> <a href="/api/export/roi.csv" target="_blank">Download CSV</a></div>
+  <pre id="out"></pre>
+</section>
+<script>
+async function acted(){
+  const p=new URLSearchParams({
+    leagueID:leagueID.value,marketName:marketName.value,entityName:entityName.value,side:side.value,
+    book:book.value,american:american.value,stake:stake.value,kelly_fraction:kelly.value,
+    ev_pct:ev.value,consensus_edge_pct:consedge.value,token:token.value
+  });
+  const r=await fetch('/api/roi/acted?'+p.toString(),{method:'POST'}).then(r=>r.json());
+  alert(JSON.stringify(r));
+}
+async function settle(){
+  const p=new URLSearchParams({id:betid.value,result:result.value,true_american:trueodds.value,token:token2.value});
+  const r=await fetch('/api/roi/settle?'+p.toString(),{method:'POST'}).then(r=>r.json());
+  alert(JSON.stringify(r));
+}
+async function summary(){
+  const j=await fetch('/api/roi/summary').then(r=>r.json());
+  out.textContent = JSON.stringify(j,null,2);
+}
+document.getElementById('acted').addEventListener('click',acted);
+document.getElementById('settle').addEventListener('click',settle);
+document.getElementById('sum').addEventListener('click',summary);
+summary();
+</script>
+</body></html>
